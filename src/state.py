@@ -39,9 +39,9 @@ class GameState(TypedDict):
     night_actions: NightActions
 
     # --- Day phase ---
-    public_log: Annotated[list[str], add]       # Everything all players can see
-    day_statements: Annotated[list[dict], add]  # {player_id, statement} dicts
-    discussion_turns_left: int                   # Countdown; 0 = skip to vote
+    public_log: Annotated[list[str], add]  # Everything all players can see (accumulates forever)
+    day_statements: list[dict]             # {player_id, statement} — reset each round
+    discussion_turns_left: int             # Countdown; 0 = skip to vote
 
     # --- Vote phase ---
     votes: dict[PlayerID, PlayerID]   # voter_id → voted_for_id

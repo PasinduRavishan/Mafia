@@ -2,7 +2,8 @@
 ## Technical Architecture & Design Specification
 
 **Project:** Mafia Interactive Human-vs-LLM Game
-**Stack:** Python 3.11 · LangGraph · LangChain (Anthropic) · LangSmith
+**Stack:** Python 3.12 · FastAPI · LangGraph · LangChain (Anthropic) · LangSmith
+**Frontend (planned):** React + TypeScript + Tailwind CSS
 **Approach:** Spec-Driven Development with Claude Code
 **Date:** April 2026
 
@@ -10,21 +11,57 @@
 
 ## 1. System Overview
 
-This system implements the social deduction game "Mafia" as an **interactive CLI game** where ONE human player competes alongside LLM-powered NPC agents, all orchestrated by LangGraph. The human is assigned a random role at game start and participates in real-time via keyboard input. LLM agents fill all remaining roles autonomously. The graph enforces strict information isolation between all participants (human and LLM alike) and delegates all game logic to a deterministic Python engine.
+This system implements the social deduction game "Mafia" as a **full-stack web game** where ONE human player competes alongside LLM-powered NPC agents.
 
-### Human Player Integration
-- `player_id = "human"` is a reserved slot in every game
-- At each node, the graph checks `is_human_turn(player_id, state)` before deciding whether to call an LLM or prompt for CLI input
-- The human sees only what their role entitles them to see (same `build_agent_view()` filter as LLMs)
-- Night action prompt: if human's role acts at night, the CLI displays their options and waits for `input()`
-- Day discussion prompt: human types their statement; it is appended to `day_statements` and `public_log` identically to NPC statements
-- Vote prompt: human types the player ID they vote for
+```
+┌─────────────────────────────────────────────────────┐
+│  Frontend (React — Phase 7)                         │
+│  Game board · Role reveal · Live log · Action forms │
+└────────────────────┬────────────────────────────────┘
+                     │ HTTP (REST)
+┌────────────────────▼────────────────────────────────┐
+│  FastAPI Backend (Phase 3)                          │
+│  POST /game/start                                   │
+│  GET  /game/{id}/state                              │
+│  POST /game/{id}/action                             │
+└────────────────────┬────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────┐
+│  LangGraph Game Engine                              │
+│  StateGraph → nodes → interrupt() for human turns  │
+│  MemorySaver checkpointer (in-memory per session)   │
+└────────────────────┬────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────┐
+│  NPC Agents (Claude claude-sonnet-4-6)                      │
+│  Mafia · Detective · Medic · Villager               │
+│  Each sees only build_agent_view() filtered state   │
+└─────────────────────────────────────────────────────┘
+```
+
+### Human Player Integration — LangGraph Interrupt Pattern
+
+The human is NOT polled via `input()`. Instead, LangGraph's `interrupt()` mechanism pauses the graph mid-execution and hands control back to FastAPI:
+
+```
+1. Graph runs NPC turns automatically
+2. When it's the human's turn → node calls interrupt(payload)
+   - payload = filtered agent view (what the human is allowed to see)
+3. Graph execution pauses; FastAPI returns 200 with the payload to client
+4. Client displays the prompt (e.g. "Who do you vote for?")
+5. Human submits POST /game/{id}/action with their response
+6. FastAPI resumes the graph with graph.invoke(Command(resume=human_input))
+7. Graph continues from where it paused
+```
+
+This is the canonical LangGraph human-in-the-loop pattern. No polling, no `input()`, fully async-compatible.
 
 **Key Design Principles:**
-- **Determinism in logic, creativity in language.** The Python `GameEngine` handles all kill resolution, vote tallying, and win checks. LLMs only generate dialogue and natural language decisions.
-- **Information silos.** Every agent receives a filtered, scoped view of the game state — never the full state object.
-- **Bounded loops.** The day discussion phase has a hard `discussion_turns_left` counter to prevent infinite token loops.
-- **Full observability.** LangSmith traces every node, every agent call, and every state transition with structured metadata.
+- **Determinism in logic, creativity in language.** `engine.py` handles all kill resolution, vote tallying, win checks. LLMs only generate dialogue and decisions.
+- **Information silos.** Every participant (human or LLM) receives only `build_agent_view()` output — never raw `GameState`.
+- **Bounded loops.** `discussion_turns_left` counter prevents infinite day discussion.
+- **Stateless API.** FastAPI is stateless per request. Game state lives in LangGraph's `MemorySaver` checkpointer, keyed by `game_id`.
+- **Full observability.** LangSmith traces every node and agent call with game metadata.
 
 ---
 
