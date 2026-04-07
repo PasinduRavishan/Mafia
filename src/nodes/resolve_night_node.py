@@ -21,6 +21,10 @@ def resolve_night_node(state: GameState) -> dict:
     if death:
         new_alive = [pid for pid in state["alive_player_ids"] if pid != death]
         dead_role = state["all_players"][death]["role"]
+        # Update all_players so is_alive reflects the death everywhere
+        updated_players = dict(state["all_players"])
+        updated_players[death] = {**updated_players[death], "is_alive": False}
+        updates["all_players"] = updated_players
         updates["alive_player_ids"] = new_alive
         updates["dead_player_ids"] = [death]  # Appended via Annotated[list, add] reducer
         updates["public_log"] = [f"__night_result__:death:{death}:{dead_role}"]

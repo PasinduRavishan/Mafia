@@ -7,12 +7,17 @@ Phase 4 additions:
 - POST /game/{id}/action now resumes the graph via Command(resume=value)
 - Interrupts are detected by checking graph.get_state(config).next
 """
+import asyncio
 import random
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from langgraph.types import Command
+
+# Thread pool for running blocking LangGraph/LLM calls off the async event loop
+_executor = ThreadPoolExecutor(max_workers=4)
 
 from src.engine import assign_roles
 from src.graph import build_graph
@@ -129,7 +134,7 @@ def _build_response(session: GameSession) -> GameStateResponse:
 
 
 @router.post("/start", response_model=GameStateResponse)
-def start_game(request: StartGameRequest):
+async def start_game(request: StartGameRequest):
     """
     Start a new game.
     1. Assigns random roles to human + NPCs
@@ -175,19 +180,18 @@ def start_game(request: StartGameRequest):
     # Create session (stores game_id + metadata)
     session = create_session(game_id, initial_state)
 
-    # ── INVOKE THE LANGGRAPH ──
-    # The graph runs from START → setup_node → night nodes.
-    # It runs automatically through NPC turns and pauses when it hits
-    # interrupt() inside a node that belongs to the human player.
-    # If the human is a villager (no night action), it runs all the way
-    # through the night phase without pausing.
-    _graph.invoke(initial_state, config)
+    # ── INVOKE THE LANGGRAPH (in thread pool) ──
+    # LangGraph + LLM calls are blocking/synchronous.
+    # Running in a thread pool keeps the FastAPI event loop free
+    # and prevents HTTP gateway timeouts on slow LLM chains.
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(_executor, lambda: _graph.invoke(initial_state, config))
 
     return _build_response(session)
 
 
 @router.get("/{game_id}/state", response_model=GameStateResponse)
-def get_state(game_id: str):
+async def get_state(game_id: str):
     """
     Get current filtered game state for the human player.
     Reads from LangGraph's MemorySaver checkpointer — always fresh.
@@ -199,7 +203,7 @@ def get_state(game_id: str):
 
 
 @router.post("/{game_id}/action", response_model=GameStateResponse)
-def submit_action(game_id: str, request: ActionRequest):
+async def submit_action(game_id: str, request: ActionRequest):
     """
     Human submits their action for the current interrupted turn.
     1. Validates game exists and graph is waiting for human input
@@ -243,6 +247,8 @@ def submit_action(game_id: str, request: ActionRequest):
     # Command(resume=value) passes the human's input back to the interrupt() call.
     # The node receives it as the return value of interrupt() and continues.
     # Graph then runs through remaining NPC turns until the next interrupt or END.
-    _graph.invoke(Command(resume=request.value.strip()), config)
+    resume_value = request.value.strip()
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(_executor, lambda: _graph.invoke(Command(resume=resume_value), config))
 
     return _build_response(session)

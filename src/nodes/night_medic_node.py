@@ -76,4 +76,8 @@ def night_medic_node(state: GameState) -> dict:
     return {
         "night_actions": NightActions(**night_actions),
         "medic_self_heal_used": medic_self_heal_used,
+        "public_log": [
+            "  [Night] The Medic opens their eyes and quietly moves to protect someone...",
+            "  [Night] The Medic closes their eyes.",
+        ],
     }

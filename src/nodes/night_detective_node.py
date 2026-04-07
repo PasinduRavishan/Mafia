@@ -81,4 +81,8 @@ def night_detective_node(state: GameState) -> dict:
     return {
         "night_actions": NightActions(**night_actions),
         "detective_ledger": updated_ledger,
+        "public_log": [
+            "  [Night] The Detective opens their eyes and chooses someone to investigate...",
+            "  [Night] The Detective closes their eyes.",
+        ],
     }

@@ -76,4 +76,10 @@ def night_mafia_node(state: GameState) -> dict:
     night_actions = dict(state["night_actions"])
     night_actions["mafia_target"] = target
 
-    return {"night_actions": NightActions(**night_actions)}
+    return {
+        "night_actions": NightActions(**night_actions),
+        "public_log": [
+            "  [Night] The Mafia opens their eyes and silently selects a target...",
+            "  [Night] The Mafia closes their eyes.",
+        ],
+    }
