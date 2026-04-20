@@ -66,7 +66,6 @@ export default function NightPhase({ gameState, onSubmit, onComplete, loading }:
   const [pickerRole,   setPickerRole]   = useState<'mafia'|'detective'|'medic'>('mafia')
   const [isMorning,    setIsMorning]    = useState(false)
   const [confirmed,    setConfirmed]    = useState(false)
-  const [detectiveReveal, setDetectiveReveal] = useState<string | null>(null)
   const [activeRole, setActiveRole] = useState<'mafia'|'detective'|'medic'|null>(null)
 
   const topRef             = useRef<HTMLDivElement>(null)
@@ -74,30 +73,6 @@ export default function NightPhase({ gameState, onSubmit, onComplete, loading }:
   const narBoxRef          = useRef<HTMLDivElement>(null)
   const resolveRef         = useRef<((v: string) => void) | null>(null)
   const sequenceStartedRef = useRef(false)   // prevents double-run in StrictMode
-  const prevLedgerRef      = useRef<Record<string, string>>({})
-  // Only show detective reveal AFTER the human clicked Confirm, not on mount or from old ledger
-  const detectiveConfirmedRef = useRef(false)
-
-  // Show investigation result only after confirm was clicked and API returns new ledger entry
-  useEffect(() => {
-    if (!detectiveConfirmedRef.current) return
-    const ledger = gameState.investigation_ledger
-    if (!ledger || humanRole !== 'detective') return
-    for (const [pid, alignment] of Object.entries(ledger)) {
-      if (!prevLedgerRef.current[pid]) {
-        detectiveConfirmedRef.current = false
-        prevLedgerRef.current = { ...ledger }
-        const isMafia = alignment === 'mafia'
-        setDetectiveReveal(
-          isMafia
-            ? `Your investigation reveals ${pid} is MAFIA! 🐺`
-            : `Your investigation reveals ${pid} is innocent. ✓`
-        )
-        setTimeout(() => setDetectiveReveal(null), 9000)
-        break
-      }
-    }
-  }, [gameState.investigation_ledger, humanRole])
 
   // ── Full cinematic sequence — StrictMode-safe ───────────────────
   useEffect(() => {
@@ -295,8 +270,6 @@ export default function NightPhase({ gameState, onSubmit, onComplete, loading }:
   const handleConfirm = () => {
     if (!selected || loading || confirmed) return
     setConfirmed(true)
-    // Gate the investigation reveal — only shows after THIS confirm
-    if (pickerRole === 'detective') detectiveConfirmedRef.current = true
     resolveRef.current?.(selected)
     resolveRef.current = null
   }
@@ -456,39 +429,6 @@ export default function NightPhase({ gameState, onSubmit, onComplete, loading }:
                 style={{ animation: 'pulse-glow 1.4s ease-in-out infinite' }}
               />
             </svg>
-          </div>
-        </div>
-      )}
-
-      {/* Detective secret investigation result */}
-      {detectiveReveal && (
-        <div style={{
-          position: 'fixed', top: '5rem', left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 10000, pointerEvents: 'none',
-          animation: 'fadeInUp 0.5s ease forwards',
-        }}>
-          <div style={{
-            background: 'rgba(4,8,30,0.98)', backdropFilter: 'blur(20px)',
-            border: '2px solid rgba(41,128,185,0.7)',
-            borderRadius: '18px', padding: '16px 28px',
-            maxWidth: '380px', textAlign: 'center',
-            boxShadow: '0 0 60px rgba(41,128,185,0.25), 0 20px 50px rgba(0,0,0,0.9)',
-          }}>
-            <p style={{
-              fontFamily: '"Cinzel Decorative", serif', fontSize: '0.6rem',
-              color: 'rgba(41,128,185,0.7)', textTransform: 'uppercase',
-              letterSpacing: '0.18em', margin: '0 0 8px',
-            }}>
-              🔍 Secret Oracle
-            </p>
-            <p style={{
-              fontFamily: 'Lora, serif', fontSize: '0.98rem',
-              color: 'rgba(255,255,255,0.92)', fontStyle: 'italic',
-              lineHeight: '1.6', margin: 0,
-            }}>
-              {detectiveReveal}
-            </p>
           </div>
         </div>
       )}

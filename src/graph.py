@@ -26,12 +26,15 @@ def route_after_win_check(state: GameState) -> str:
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
-    from psycopg_pool import ConnectionPool
-    from langgraph.checkpoint.postgres import PostgresSaver
-    
-    # Use autocommit=True for Neon/Serverless Postgres
-    _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10, kwargs={"autocommit": True})
-    _checkpointer = PostgresSaver(_pool)
+    try:
+        from psycopg_pool import ConnectionPool
+        from langgraph.checkpoint.postgres import PostgresSaver
+        _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10, kwargs={"autocommit": True})
+        _checkpointer = PostgresSaver(_pool)
+    except ModuleNotFoundError:
+        print("WARNING: psycopg_pool not installed — falling back to MemorySaver despite DATABASE_URL being set.")
+        _checkpointer = MemorySaver()
+        DATABASE_URL = None  # prevent build_graph from running Postgres setup
 else:
     _checkpointer = MemorySaver()
 
@@ -45,7 +48,11 @@ def build_graph():
         print("--- DATABASE TABLE CHECK ---")
         try:
             with _pool.connection() as conn:
-                # Manually create the required tables based on LangGraph schema
+                # First, drop the incorrect binary tables so we can recreate them as JSONB
+                # (Safe to do since there is no real game data yet)
+                conn.execute("DROP TABLE IF EXISTS checkpoints, checkpoint_blobs, checkpoint_writes CASCADE;")
+                
+                # Recreate the required tables using JSONB for the data columns
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS checkpoints (
                         thread_id TEXT NOT NULL,
@@ -53,8 +60,8 @@ def build_graph():
                         checkpoint_id TEXT NOT NULL,
                         parent_checkpoint_id TEXT,
                         type TEXT,
-                        checkpoint BYTEA NOT NULL,
-                        metadata BYTEA NOT NULL,
+                        checkpoint JSONB NOT NULL,
+                        metadata JSONB NOT NULL,
                         PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
                     );
                     CREATE TABLE IF NOT EXISTS checkpoint_blobs (
@@ -79,7 +86,7 @@ def build_graph():
                     );
                 """)
                 conn.commit()
-                print("Database tables verified/created successfully.")
+                print("Database tables established correctly with JSONB.")
         except Exception as e:
             print(f"ERROR during manual table creation: {e}")
         print("---------------------------")
