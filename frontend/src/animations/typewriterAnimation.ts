@@ -7,7 +7,7 @@ import gsap from 'gsap'
 export function typewriterWords(
   container: HTMLElement,
   text: string,
-  wordsPerSecond = 4,
+  wordsPerSecond = 2,
   onComplete?: () => void,
 ): gsap.core.Timeline {
   // Build word spans

@@ -19,7 +19,7 @@ export default function NarratorBox({ text, phaseLabel }: Props) {
       { y: 0,  opacity: 1, duration: 0.5, ease: 'power2.out' }
     )
     // Typewriter the narrator text
-    typewriterWords(textRef.current, text, 5)
+    typewriterWords(textRef.current, text, 2)
   }, [text])
 
   if (!text) return null

@@ -28,11 +28,11 @@ interface Props {
 // ── Speed tuning — adjust these to control pacing ──────────────────────
 // Increase any value to slow down, decrease to speed up
 const D = {
-  NAR_WORD_MS:   120,    // ms per word — narrator typewriter (↑ = slower narrator)
-  NAR_HOLD:      700,    // ms pause after narrator finishes a line
-  WORD_INTERVAL: 120,    // ms per word — player statement typewriter (↑ = slower speech)
+  NAR_WORD_MS:   250,    // ms per word — narrator typewriter (↑ = slower narrator)
+  NAR_HOLD:      900,    // ms pause after narrator finishes a line
+  WORD_INTERVAL: 250,    // ms per word — player statement typewriter (↑ = slower speech)
   HOLD_AFTER:   1600,    // ms hold on completed statement before moving to next speaker
-  GAP_BETWEEN:   450,    // ms gap between speakers
+  GAP_BETWEEN:   950,    // ms gap between speakers
   PERSISTENT_MS: 600000, // how long the head-bubble lingers (don't change)
 }
 
@@ -73,9 +73,19 @@ export default function DiscussionPhase({
   const humanDoneRef   = useRef<((text: string) => void) | null>(null)
   const submittedRef   = useRef(false)
 
+  // cancelledRef: only set true on REAL component unmount.
+  // The [hasData] cleanup resets sequenceRanRef (for StrictMode) but MUST NOT
+  // set this — otherwise the sequence gets killed when gameState updates mid-run
+  // (e.g. when human submits and API returns the vote prompt, hasData→false).
+  const cancelledRef = useRef(false)
+
   useEffect(() => {
     mountedRef.current = true
-    return () => { mountedRef.current = false }
+    cancelledRef.current = false
+    return () => {
+      mountedRef.current = false
+      cancelledRef.current = true   // true unmount — stop any running sequence
+    }
   }, [])
 
   // Start sequence when we have NPC data OR it's the human's turn (no NPCs alive)
@@ -84,20 +94,24 @@ export default function DiscussionPhase({
   useEffect(() => {
     if (!hasData || sequenceRanRef.current) return
     sequenceRanRef.current = true
-    let cancelled = false
+    // Snapshot NPC data at sequence start — immune to later gameState changes
+    const npcSnapshot = [...npcStatements.filter(s => s.player_id !== 'human')]
+    const isMyTurnSnapshot = isMyTurn
+    const humanIsDeadSnapshot = humanIsDead
 
     const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
+    const c = () => cancelledRef.current  // shorthand
 
     // ── Narrator box: word-by-word ──────────────────────────────────────
     const sayNarrator = async (text: string) => {
-      if (cancelled) return
+      if (c()) return
       setNarText('')
       setNarVisible(true)
       await wait(60)
       const words = text.split(' ')
       let built = ''
       for (let i = 0; i < words.length; i++) {
-        if (cancelled) return
+        if (c()) return
         built += (built ? ' ' : '') + words[i]
         setNarText(built)
         if (i === 0 && narBoxRef.current) {
@@ -108,97 +122,90 @@ export default function DiscussionPhase({
         }
         await wait(D.NAR_WORD_MS)
       }
-      if (cancelled) return
+      if (c()) return
       await wait(D.NAR_HOLD)
     }
 
     // ── Player statement: word-by-word in speaker box AND head bubble ───
     const typewriterStatement = async (pid: string, text: string) => {
-      if (cancelled) return
+      if (c()) return
       onSpeaker?.(pid)
-      // Show speaker box immediately (with empty text = "composing..." state)
       setCurrentSpeaker(pid)
       setCurrentText('')
 
-      // Wait one frame for the box to render, then GSAP animate it in
       await wait(50)
-      if (cancelled) return
+      if (c()) return
       if (speakerBoxRef.current) {
         gsap.fromTo(speakerBoxRef.current,
           { opacity: 0, y: 20, scale: 0.96 },
           { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: 'power2.out' }
         )
       }
-      await wait(200)  // brief "composing..." pause before words start
-      if (cancelled) return
+      await wait(200)
+      if (c()) return
 
       const words = text.split(' ')
       let built = ''
       const typeDuration = words.length * D.WORD_INTERVAL + D.HOLD_AFTER + 10000
 
       for (const word of words) {
-        if (cancelled) return
+        if (c()) return
         built += (built ? ' ' : '') + word
         setCurrentText(built)
-        onBubble(pid, built, typeDuration)   // above-head bubble (bonus)
+        onBubble(pid, built, typeDuration)
         await wait(D.WORD_INTERVAL)
       }
 
-      if (cancelled) return
-      // Persist final text permanently in head bubble
+      if (c()) return
       onBubble(pid, text, D.PERSISTENT_MS)
       await wait(D.HOLD_AFTER)
 
-      if (cancelled) return
-      // Move to history, clear speaker box
+      if (c()) return
       setHistory(prev => [...prev, { pid, text }])
       setCurrentSpeaker(null)
       setCurrentText('')
       onSpeaker?.(null)
-
-      // Scroll history to bottom
       if (historyRef.current) {
         historyRef.current.scrollTop = historyRef.current.scrollHeight
       }
     }
 
     // ── Randomise order: shuffle NPCs, insert human at non-first slot ───
-    const npcList = [...npcStatements.filter(s => s.player_id !== 'human')]
-    for (let i = npcList.length - 1; i > 0; i--) {
+    for (let i = npcSnapshot.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1))
-      ;[npcList[i], npcList[j]] = [npcList[j], npcList[i]]
+      ;[npcSnapshot[i], npcSnapshot[j]] = [npcSnapshot[j], npcSnapshot[i]]
     }
     type Speaker = { player_id: string; statement: string }
     const order: Speaker[] = []
-    const humanPos = npcList.length > 0
-      ? Math.floor(Math.random() * npcList.length) + 1
+    const humanPos = npcSnapshot.length > 0
+      ? Math.floor(Math.random() * npcSnapshot.length) + 1
       : 0
-    for (let i = 0; i < npcList.length; i++) {
+    for (let i = 0; i < npcSnapshot.length; i++) {
       if (i === humanPos) order.push({ player_id: 'human', statement: '' })
-      order.push({ player_id: npcList[i].player_id, statement: npcList[i].statement })
+      order.push({ player_id: npcSnapshot[i].player_id, statement: npcSnapshot[i].statement })
     }
-    if (humanPos >= npcList.length) order.push({ player_id: 'human', statement: '' })
+    if (humanPos >= npcSnapshot.length) order.push({ player_id: 'human', statement: '' })
 
     // ── Main sequence ────────────────────────────────────────────────────
     async function runSequence() {
       await sayNarrator('The village gathers. It is time to speak.')
-      if (cancelled) return
+      if (c()) return
       setNarVisible(false)
       await wait(300)
 
       for (const speaker of order) {
-        if (cancelled) return
+        if (c()) return
 
         if (speaker.player_id === 'human') {
-          if (!isMyTurn || humanIsDead) continue
+          if (!isMyTurnSnapshot || humanIsDeadSnapshot) continue
           await sayNarrator('The Narrator turns to you. What do you say?')
-          if (cancelled) return
+          if (c()) return
           setNarText('')
           setNarVisible(false)
           setPanelOpen(true)
 
           const humanText = await new Promise<string>(r => { humanDoneRef.current = r })
-          if (cancelled) return
+          if (c()) return
           setPanelOpen(false)
           if (humanText) {
             await typewriterStatement('human', humanText)
@@ -206,7 +213,7 @@ export default function DiscussionPhase({
           }
         } else {
           await sayNarrator(`The Narrator turns to ${speaker.player_id}...`)
-          if (cancelled) return
+          if (c()) return
           setNarText('')
           setNarVisible(false)
           await wait(150)
@@ -217,21 +224,19 @@ export default function DiscussionPhase({
 
       // Pause before voting — give the user time to read all statements
       await sayNarrator('The village has spoken. The time for words is over...')
-      if (cancelled) return
+      if (c()) return
       setNarText('')
       setNarVisible(false)
       await wait(5500)
 
-      if (!cancelled) {
-        setNarVisible(false)
-        onComplete()
-      }
+      if (!c()) onComplete()
     }
 
     runSequence()
 
     return () => {
-      cancelled = true
+      // Reset the guard so StrictMode's remount can restart the sequence.
+      // Do NOT touch cancelledRef here — that's only set in the [] unmount effect.
       sequenceRanRef.current = false
       onSpeaker?.(null)
       if (humanDoneRef.current) {

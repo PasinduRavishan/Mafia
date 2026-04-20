@@ -31,36 +31,25 @@ if DATABASE_URL:
         from langgraph.checkpoint.postgres import PostgresSaver
         _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10, kwargs={"autocommit": True})
         _checkpointer = PostgresSaver(_pool)
+        # Create tables on startup if they don't exist — idempotent, safe to call every deploy
+        print("--- POSTGRES CHECKPOINTER SETUP ---")
+        _checkpointer.setup()
+        print("Checkpointer tables ready.")
+        print("-----------------------------------")
     except ModuleNotFoundError:
-        print("WARNING: psycopg_pool not installed — falling back to MemorySaver despite DATABASE_URL being set.")
+        print("WARNING: psycopg_pool not installed — falling back to MemorySaver.")
         _checkpointer = MemorySaver()
-        DATABASE_URL = None  # prevent build_graph from running Postgres setup
+        DATABASE_URL = None
+    except Exception as e:
+        print(f"ERROR: Postgres checkpointer setup failed: {e}")
+        print("Falling back to MemorySaver.")
+        _checkpointer = MemorySaver()
+        DATABASE_URL = None
 else:
     _checkpointer = MemorySaver()
 
 
 def build_graph():
-    """
-    Builds and compiles the LangGraph StateGraph.
-    """
-    # Ensure tables exist if using Postgres
-    if DATABASE_URL and isinstance(_checkpointer, PostgresSaver):
-        print("--- DATABASE TABLE CHECK ---")
-        try:
-            # We need to wipe the broken manually created tables from our previous attempts
-            with _pool.connection() as conn:
-                conn.execute("DROP TABLE IF EXISTS checkpoints, checkpoint_blobs, checkpoint_writes CASCADE;")
-                conn.commit()
-
-            # Now, let the LangGraph library itself create the tables with its EXACT correct schema.
-            # Calling setup() with no arguments on a PostgresSaver will use the pool and commit automatically.
-            _checkpointer.setup()
-            print("Database setup completed natively via LangGraph.")
-        except Exception as e:
-            print(f"Error during native checkpointer setup: {e}")
-        except Exception as e:
-            print(f"ERROR during manual table creation: {e}")
-        print("---------------------------")
 
     builder = StateGraph(GameState)
 
