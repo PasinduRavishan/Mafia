@@ -27,22 +27,38 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
     try:
+        import psycopg
         from psycopg_pool import ConnectionPool
         from langgraph.checkpoint.postgres import PostgresSaver
-        _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10, kwargs={"autocommit": True})
-        _checkpointer = PostgresSaver(_pool)
-        # Create tables on startup if they don't exist — idempotent, safe to call every deploy
+
         print("--- POSTGRES CHECKPOINTER SETUP ---")
-        _checkpointer.setup()
-        print("Checkpointer tables ready.")
+
+        # Step 1: Run setup() via a direct connection — pool may not have open
+        # connections yet, so this guarantees DDL runs before any requests come in.
+        with psycopg.connect(DATABASE_URL, autocommit=True) as _setup_conn:
+            _tmp_saver = PostgresSaver(_setup_conn)
+            _tmp_saver.setup()
+        print("Checkpointer tables verified/created.")
+
+        # Step 2: Create the pool used for all runtime graph calls
+        _pool = ConnectionPool(
+            conninfo=DATABASE_URL,
+            max_size=10,
+            open=True,              # open connections eagerly on creation
+            kwargs={"autocommit": True},
+        )
+        _checkpointer = PostgresSaver(_pool)
+        print("Runtime pool ready.")
         print("-----------------------------------")
+
     except ModuleNotFoundError:
-        print("WARNING: psycopg_pool not installed — falling back to MemorySaver.")
+        print("WARNING: psycopg/psycopg_pool not installed — falling back to MemorySaver.")
         _checkpointer = MemorySaver()
         DATABASE_URL = None
     except Exception as e:
-        print(f"ERROR: Postgres checkpointer setup failed: {e}")
-        print("Falling back to MemorySaver.")
+        import traceback
+        traceback.print_exc()
+        print(f"ERROR: Postgres setup failed ({e}) — falling back to MemorySaver.")
         _checkpointer = MemorySaver()
         DATABASE_URL = None
 else:
