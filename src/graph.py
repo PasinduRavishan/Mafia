@@ -47,46 +47,17 @@ def build_graph():
     if DATABASE_URL and isinstance(_checkpointer, PostgresSaver):
         print("--- DATABASE TABLE CHECK ---")
         try:
+            # We need to wipe the broken manually created tables from our previous attempts
             with _pool.connection() as conn:
-                # First, drop the incorrect binary tables so we can recreate them as JSONB
-                # (Safe to do since there is no real game data yet)
                 conn.execute("DROP TABLE IF EXISTS checkpoints, checkpoint_blobs, checkpoint_writes CASCADE;")
-                
-                # Recreate the required tables using JSONB for the data columns
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS checkpoints (
-                        thread_id TEXT NOT NULL,
-                        checkpoint_ns TEXT NOT NULL DEFAULT '',
-                        checkpoint_id TEXT NOT NULL,
-                        parent_checkpoint_id TEXT,
-                        type TEXT,
-                        checkpoint JSONB NOT NULL,
-                        metadata JSONB NOT NULL,
-                        PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
-                    );
-                    CREATE TABLE IF NOT EXISTS checkpoint_blobs (
-                        thread_id TEXT NOT NULL,
-                        checkpoint_ns TEXT NOT NULL DEFAULT '',
-                        channel TEXT NOT NULL,
-                        version TEXT NOT NULL,
-                        type TEXT NOT NULL,
-                        blob BYTEA,
-                        PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
-                    );
-                    CREATE TABLE IF NOT EXISTS checkpoint_writes (
-                        thread_id TEXT NOT NULL,
-                        checkpoint_ns TEXT NOT NULL DEFAULT '',
-                        checkpoint_id TEXT NOT NULL,
-                        task_id TEXT NOT NULL,
-                        idx INTEGER NOT NULL,
-                        channel TEXT NOT NULL,
-                        type TEXT,
-                        blob BYTEA,
-                        PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
-                    );
-                """)
                 conn.commit()
-                print("Database tables established correctly with JSONB.")
+
+            # Now, let the LangGraph library itself create the tables with its EXACT correct schema.
+            # Calling setup() with no arguments on a PostgresSaver will use the pool and commit automatically.
+            _checkpointer.setup()
+            print("Database setup completed natively via LangGraph.")
+        except Exception as e:
+            print(f"Error during native checkpointer setup: {e}")
         except Exception as e:
             print(f"ERROR during manual table creation: {e}")
         print("---------------------------")
