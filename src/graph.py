@@ -61,7 +61,15 @@ else:
 
 
 def build_graph():
+    if DATABASE_URL and hasattr(_checkpointer, "setup"):
+        try:
+            _checkpointer.setup()
+            print("PostgresSaver setup complete (tables created/verified).")
+        except Exception as e:
+            print(f"Warning during PostgresSaver setup: {e}")
+
     builder = StateGraph(GameState)
+
 
     builder.add_node("setup", setup_node)
     builder.add_node("night_mafia", night_mafia_node)
