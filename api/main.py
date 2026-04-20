@@ -1,10 +1,18 @@
-"""
-main.py — FastAPI application entry point.
-Run with: uvicorn api.main:app --reload
-Docs at:  http://localhost:8000/docs
-"""
+import os
+import sys
+
+# Ensure the root directory is in the python path so 'api' and 'src' can be found
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.getcwd())
+
 from dotenv import load_dotenv
-load_dotenv()  # Loads ANTHROPIC_API_KEY, LANGSMITH_API_KEY etc. from .env file
+load_dotenv()
+
+print("--- CLOUD RUN STARTUP ---")
+print(f"DATABASE_URL present: {'Yes' if os.environ.get('DATABASE_URL') else 'No'}")
+print(f"ANTHROPIC_API_KEY present: {'Yes' if os.environ.get('ANTHROPIC_API_KEY') else 'No'}")
+print(f"Listening on Port: {os.environ.get('PORT', '8080')}")
+print("-------------------------")
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware

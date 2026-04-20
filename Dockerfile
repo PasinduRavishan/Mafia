@@ -1,19 +1,25 @@
 FROM python:3.11-slim
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y libpq-dev gcc && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy and install dependencies
+# Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install "psycopg[binary]" "psycopg-pool" "langgraph-checkpoint-postgres"
 
+# Copy all project files
 COPY . .
 
-# Set environment variable defaults
+# Explicitly set PYTHONPATH to include the /app directory
+ENV PYTHONPATH=/app
+
+# Expose port (Cloud Run defaults to 8080)
 ENV PORT=8080
 
-# Use array syntax for CMD to ensure signals are handled correctly
+# Start uvicorn
 CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT}"]
