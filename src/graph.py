@@ -29,8 +29,8 @@ if DATABASE_URL:
     from psycopg_pool import ConnectionPool
     from langgraph.checkpoint.postgres import PostgresSaver
     
-    # Global pool
-    _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10)
+    # Use autocommit=True for Neon/Serverless Postgres
+    _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10, kwargs={"autocommit": True})
     _checkpointer = PostgresSaver(_pool)
 else:
     _checkpointer = MemorySaver()
@@ -46,6 +46,7 @@ def build_graph():
             # We must use a connection from the pool to run setup
             with _pool.connection() as conn:
                 _checkpointer.setup(conn)
+                conn.commit() # Force the table creation to be visible globally
         except Exception as e:
             # If tables already exist, this might throw an error we can ignore
             print(f"Database setup notice: {e}")
