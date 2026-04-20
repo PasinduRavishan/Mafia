@@ -42,14 +42,47 @@ def build_graph():
     """
     # Ensure tables exist if using Postgres
     if DATABASE_URL and isinstance(_checkpointer, PostgresSaver):
+        print("--- DATABASE TABLE CHECK ---")
         try:
-            # We must use a connection from the pool to run setup
             with _pool.connection() as conn:
-                _checkpointer.setup(conn)
-                conn.commit() # Force the table creation to be visible globally
+                # Manually create the required tables based on LangGraph schema
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS checkpoints (
+                        thread_id TEXT NOT NULL,
+                        checkpoint_ns TEXT NOT NULL DEFAULT '',
+                        checkpoint_id TEXT NOT NULL,
+                        parent_checkpoint_id TEXT,
+                        type TEXT,
+                        checkpoint BYTEA NOT NULL,
+                        metadata BYTEA NOT NULL,
+                        PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+                    );
+                    CREATE TABLE IF NOT EXISTS checkpoint_blobs (
+                        thread_id TEXT NOT NULL,
+                        checkpoint_ns TEXT NOT NULL DEFAULT '',
+                        channel TEXT NOT NULL,
+                        version TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        blob BYTEA,
+                        PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
+                    );
+                    CREATE TABLE IF NOT EXISTS checkpoint_writes (
+                        thread_id TEXT NOT NULL,
+                        checkpoint_ns TEXT NOT NULL DEFAULT '',
+                        checkpoint_id TEXT NOT NULL,
+                        task_id TEXT NOT NULL,
+                        idx INTEGER NOT NULL,
+                        channel TEXT NOT NULL,
+                        type TEXT,
+                        value BYTEA,
+                        PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+                    );
+                """)
+                conn.commit()
+                print("Database tables verified/created successfully.")
         except Exception as e:
-            # If tables already exist, this might throw an error we can ignore
-            print(f"Database setup notice: {e}")
+            print(f"ERROR during manual table creation: {e}")
+        print("---------------------------")
 
     builder = StateGraph(GameState)
 
