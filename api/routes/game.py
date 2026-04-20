@@ -28,8 +28,14 @@ from api.session import GameSession, create_session, get_session
 
 router = APIRouter(prefix="/game", tags=["game"])
 
-# One compiled graph instance shared across all games (thread_id separates them)
-_graph = build_graph()
+# Global compiled graph instance (initialized lazily)
+_graph_instance = None
+
+def get_graph():
+    global _graph_instance
+    if _graph_instance is None:
+        _graph_instance = build_graph()
+    return _graph_instance
 
 # NPC name pool — shuffled each game so names feel fresh
 NPC_NAMES = [
@@ -56,7 +62,7 @@ def _get_interrupt_payload(game_id: str) -> Optional[dict]:
     Returns None if graph ran to completion or is waiting for something else.
     """
     config = {"configurable": {"thread_id": game_id}}
-    snapshot = _graph.get_state(config)
+    snapshot = get_graph().get_state(config)
 
     # snapshot.next is non-empty when graph is paused and has more nodes to run
     if not snapshot.next:
@@ -73,7 +79,7 @@ def _get_interrupt_payload(game_id: str) -> Optional[dict]:
 def _get_current_state(game_id: str) -> Optional[GameState]:
     """Read the latest graph state from MemorySaver checkpointer."""
     config = {"configurable": {"thread_id": game_id}}
-    snapshot = _graph.get_state(config)
+    snapshot = get_graph().get_state(config)
     if snapshot and snapshot.values:
         return snapshot.values
     return None
@@ -82,7 +88,7 @@ def _get_current_state(game_id: str) -> Optional[GameState]:
 def _is_game_over(game_id: str) -> bool:
     """Check if graph has reached END (no next nodes and game_over=True)."""
     config = {"configurable": {"thread_id": game_id}}
-    snapshot = _graph.get_state(config)
+    snapshot = get_graph().get_state(config)
     if not snapshot.next and snapshot.values:
         return snapshot.values.get("game_over", False)
     return False
@@ -187,7 +193,7 @@ async def start_game(request: StartGameRequest):
     # Running in a thread pool keeps the FastAPI event loop free
     # and prevents HTTP gateway timeouts on slow LLM chains.
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(_executor, lambda: _graph.invoke(initial_state, config))
+    await loop.run_in_executor(_executor, lambda: get_graph().invoke(initial_state, config))
 
     return _build_response(session)
 
@@ -251,6 +257,6 @@ async def submit_action(game_id: str, request: ActionRequest):
     # Graph then runs through remaining NPC turns until the next interrupt or END.
     resume_value = request.value.strip()
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(_executor, lambda: _graph.invoke(Command(resume=resume_value), config))
+    await loop.run_in_executor(_executor, lambda: get_graph().invoke(Command(resume=resume_value), config))
 
     return _build_response(session)
