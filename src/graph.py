@@ -25,6 +25,54 @@ def route_after_win_check(state: GameState) -> str:
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+# Exact DDL LangGraph's PostgresSaver expects — used as a guaranteed fallback
+_CHECKPOINT_DDL = """
+CREATE TABLE IF NOT EXISTS checkpoint_migrations (
+    v INTEGER PRIMARY KEY
+);
+CREATE TABLE IF NOT EXISTS checkpoints (
+    thread_id          TEXT    NOT NULL,
+    checkpoint_ns      TEXT    NOT NULL DEFAULT '',
+    checkpoint_id      TEXT    NOT NULL,
+    parent_checkpoint_id TEXT,
+    type               TEXT,
+    checkpoint         BYTEA   NOT NULL,
+    metadata           BYTEA   NOT NULL,
+    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+);
+CREATE TABLE IF NOT EXISTS checkpoint_blobs (
+    thread_id     TEXT  NOT NULL,
+    checkpoint_ns TEXT  NOT NULL DEFAULT '',
+    channel       TEXT  NOT NULL,
+    version       TEXT  NOT NULL,
+    type          TEXT  NOT NULL,
+    blob          BYTEA,
+    PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
+);
+CREATE TABLE IF NOT EXISTS checkpoint_writes (
+    thread_id     TEXT    NOT NULL,
+    checkpoint_ns TEXT    NOT NULL DEFAULT '',
+    checkpoint_id TEXT    NOT NULL,
+    task_id       TEXT    NOT NULL,
+    idx           INTEGER NOT NULL,
+    channel       TEXT    NOT NULL,
+    type          TEXT,
+    value         BYTEA,
+    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+);
+"""
+
+def _ensure_tables(url: str) -> None:
+    """Create checkpoint tables directly via psycopg — bypasses any setup() quirks."""
+    import psycopg
+    with psycopg.connect(url, autocommit=True) as conn:
+        for stmt in _CHECKPOINT_DDL.strip().split(";\n"):
+            stmt = stmt.strip()
+            if stmt:
+                conn.execute(stmt + ";")
+    print("Checkpoint tables verified via direct DDL.")
+
+
 if DATABASE_URL:
     try:
         import psycopg
@@ -33,32 +81,34 @@ if DATABASE_URL:
 
         print("--- POSTGRES CHECKPOINTER SETUP ---")
 
-        # Step 1: Run setup() via a direct connection — pool may not have open
-        # connections yet, so this guarantees DDL runs before any requests come in.
-        with psycopg.connect(DATABASE_URL, autocommit=True) as _setup_conn:
-            _tmp_saver = PostgresSaver(_setup_conn)
-            _tmp_saver.setup()
-        print("Checkpointer tables verified/created.")
+        # First: try the official setup() API
+        try:
+            with PostgresSaver.from_conn_string(DATABASE_URL) as _tmp:
+                _tmp.setup()
+            print("setup() via from_conn_string succeeded.")
+        except Exception as setup_err:
+            print(f"setup() failed ({setup_err}), falling back to direct DDL.")
+            _ensure_tables(DATABASE_URL)
 
-        # Step 2: Create the pool used for all runtime graph calls
+        # Create the runtime pool
         _pool = ConnectionPool(
             conninfo=DATABASE_URL,
             max_size=10,
-            open=True,              # open connections eagerly on creation
+            open=True,
             kwargs={"autocommit": True},
         )
         _checkpointer = PostgresSaver(_pool)
-        print("Runtime pool ready.")
+        print("Postgres checkpointer ready.")
         print("-----------------------------------")
 
-    except ModuleNotFoundError:
-        print("WARNING: psycopg/psycopg_pool not installed — falling back to MemorySaver.")
+    except (ModuleNotFoundError, ImportError) as e:
+        print(f"WARNING: Postgres packages not available ({e}) — using MemorySaver.")
         _checkpointer = MemorySaver()
         DATABASE_URL = None
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"ERROR: Postgres setup failed ({e}) — falling back to MemorySaver.")
+        print(f"ERROR: Postgres init failed ({e}) — using MemorySaver.")
         _checkpointer = MemorySaver()
         DATABASE_URL = None
 else:
