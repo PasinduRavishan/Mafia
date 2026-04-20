@@ -64,18 +64,37 @@
 
 ---
 
-## Phase 4 — Night Phase Agents (IN PROGRESS)
+## Phase 4 — Night Phase Agents ✅
 
-**What:** Real LangGraph execution with NPC AI agents and human-in-the-loop via `interrupt()`.
+**What:** Real LangGraph execution. NPC agents call Claude LLM. Human turns use `interrupt()`.
 
-**Key addition:** `MemorySaver` checkpointer enables graph to pause mid-execution and resume when human submits input.
-
-**Files being built:**
-- `src/agents/base_agent.py` — LLM call wrapper using LangChain + Claude
-- `src/utils/prompts.py` — All NPC system prompt templates
-- `src/nodes/setup_node.py` — Full state initialization
-- `src/nodes/night_*.py` — Mafia / Detective / Medic with interrupt for human turns
+**Files:**
+- `src/agents/base_agent.py` — Lazy LLM singleton, `call_agent()`, `parse_json_response()`
+- `src/utils/prompts.py` — All NPC prompt templates (night + day + vote + narrator)
+- `src/nodes/setup_node.py` — State init + opening log entries
+- `src/nodes/night_mafia/detective/medic_node.py` — NPC LLM calls + human interrupt
 - `src/nodes/resolve_night_node.py` — Pure Python kill resolution
+
+---
+
+## Phase 5 — Day Phase ✅
+
+**What:** Narrator LLM + NPC day discussion (LLM) + NPC voting (LLM) + human turns.
+
+**Files:**
+- `src/nodes/narrator_node.py` — Claude writes dramatic night announcement
+- `src/nodes/day_discussion_node.py` — NPCs speak first with LLM, human speaks last via interrupt
+- `src/nodes/vote_node.py` — NPC LLM votes with role hints, human votes via interrupt
+
+---
+
+## Phase 6 — Full Game Loop ✅
+
+**What:** Win condition + round reset + safety cutoff + automated test driver.
+
+**Files:**
+- `src/nodes/win_check_node.py` — Checks win, resets round state, enforces max 20 rounds
+- `scripts/test_game.py` — Drives a full game via HTTP API automatically (no human needed)
 
 ---
 

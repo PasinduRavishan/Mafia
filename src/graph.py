@@ -81,7 +81,7 @@ def build_graph():
                         idx INTEGER NOT NULL,
                         channel TEXT NOT NULL,
                         type TEXT,
-                        value BYTEA,
+                        blob BYTEA,
                         PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
                     );
                 """)
