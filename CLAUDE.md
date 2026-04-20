@@ -25,13 +25,14 @@ mafia/
 │   ├── ARCHITECTURE.md         ← Full technical architecture (read second)
 │   ├── GAME_RULES.md           ← Complete game logic & edge cases
 │   ├── AGENT_PROMPTS.md        ← All agent system prompt templates
+│   ├── API.md                  ← FastAPI endpoint specification
 │   └── TASKS.md                ← Implementation task list with status
 ├── src/
-│   ├── state.py                ← GameState TypedDict definition (build first)
-│   ├── engine.py               ← Pure Python game logic (no LLM)
-│   ├── graph.py                ← LangGraph StateGraph wiring
+│   ├── state.py                ← GameState TypedDict definition ✅
+│   ├── engine.py               ← Pure Python game logic (no LLM) ✅
+│   ├── graph.py                ← LangGraph StateGraph wiring ✅
 │   ├── nodes/
-│   │   ├── setup_node.py
+│   │   ├── setup_node.py       ← stub ✅ → implement in Phase 4
 │   │   ├── night_mafia_node.py
 │   │   ├── night_detective_node.py
 │   │   ├── night_medic_node.py
@@ -47,12 +48,20 @@ mafia/
 │   │   ├── medic_agent.py
 │   │   └── villager_agent.py
 │   └── utils/
-│       ├── state_views.py      ← build_agent_view() - information isolation
+│       ├── state_views.py      ← build_agent_view() — information isolation ✅
 │       └── logging.py          ← LangSmith tagging helpers
+├── api/
+│   ├── __init__.py
+│   ├── main.py                 ← FastAPI app + route registration
+│   ├── routes/
+│   │   ├── __init__.py
+│   │   └── game.py             ← /game endpoints
+│   ├── models.py               ← Pydantic request/response schemas
+│   └── session.py              ← In-memory game session store
 ├── tests/
-│   ├── test_engine.py          ← Pure Python logic tests (no LLM needed)
-│   ├── test_state_views.py     ← Information isolation tests
-│   └── test_integration.py    ← Full game round tests
+│   ├── test_engine.py          ← Pure Python logic tests ✅
+│   ├── test_state_views.py     ← Information isolation tests ✅
+│   └── test_integration.py    ← Full game round tests (Phase 6)
 ├── .env.example
 ├── requirements.txt
 └── pyproject.toml
@@ -93,18 +102,74 @@ Default max turns: 3 per player per round.
 
 ---
 
-## Tech Stack (Pinned Versions)
+## Tech Stack
 
+### Backend (build now)
 | Package | Version | Purpose |
 |---|---|---|
-| `langgraph` | `>=0.2.0` | Graph orchestration |
-| `langchain-anthropic` | `>=0.3.0` | Claude as agent LLM |
+| `fastapi` | `>=0.111.0` | REST API server |
+| `uvicorn` | `>=0.30.0` | ASGI server |
+| `langgraph` | `>=0.2.0` | Game graph orchestration + human interrupt |
+| `langchain-anthropic` | `>=0.3.0` | Claude as NPC agent LLM |
 | `langchain-core` | `>=0.3.0` | Base types, messages |
 | `langsmith` | `>=0.2.0` | Tracing & observability |
-| `pydantic` | `>=2.0` | Data validation for inputs/outputs |
+| `pydantic` | `>=2.0` | Request/response models + state validation |
+| `python-dotenv` | `>=1.0` | Environment variable loading |
 | Python | `>=3.11` | f-strings, TypedDict, match statements |
 
-LLM Model for all agents: `claude-sonnet-4-6` (balance of speed + quality)
+### Frontend (Phase 7 — Active)
+| Tech | Version | Purpose |
+|---|---|---|
+| React + Vite + TypeScript | Latest | UI framework — SPA, no SSR needed |
+| Tailwind CSS | v3 | Utility-first styling |
+| DaisyUI | v4 | Component theme system — use "night" dark theme |
+| GSAP (GreenSock) | v3 | ALL animations — no Framer Motion, no CSS keyframes for game animations |
+| Howler.js | v2 | Sound — crickets, heartbeat, morning birds, vote drumroll, shatters |
+| tsParticles | Latest | Fog / firefly ambient particle effects |
+
+**Frontend Critical Rules:**
+```
+ALWAYS use GSAP for all game animations (eye open/close, card flip, shatter, typewriter).
+NEVER use Framer Motion — GSAP is the animation layer, period.
+ALWAYS use DaisyUI "night" theme as base — override with custom CSS only when needed.
+ALWAYS follow docs/USERFLOW.md for every screen and animation sequence.
+ALL game state comes from API polling — no WebSockets, no Redux, useState + polling only.
+NEVER show a spinner alone for NPC turns — always show the cinematic night/day scene.
+```
+
+**Frontend Color Palette:**
+```css
+--bg:       #0d0d0d   /* near black background */
+--card:     #1a1a2e   /* dark navy card surface */
+--accent:   #e8a838   /* lantern amber — primary CTA, glows */
+--mafia:    #c0392b   /* blood red — Mafia role */
+--detective:#2980b9   /* midnight blue — Detective role */
+--medic:    #27ae60   /* forest green — Medic role */
+--villager: #7f8c8d   /* muted grey — Villager role */
+--text:     #e8e8e8   /* off-white body text */
+--muted:    #4a4a5a   /* dimmed elements */
+```
+
+**Frontend Fonts (Google Fonts):**
+```
+Cinzel Decorative  — game title, phase headers
+Lora               — narrator speech (serif, atmospheric)
+Inter              — UI chrome, buttons, labels
+JetBrains Mono     — game log panel (terminal feel)
+```
+
+**Frontend Design Vision:**
+- Persistent round-table scene — all game phases happen as overlays on the table
+- Eyelid open/close animation for night phase transitions (GSAP panels slide top+bottom)
+- Card shatter on death (GSAP shards fall off screen)
+- Word-by-word typewriter for narrator text (GSAP SplitText or manual char split)
+- NPC speech bubbles stagger in one-by-one above their player seat
+- Vote reveal animates each vote card flip one-by-one (game-show style)
+- Role reveal via 3D spinning card flip
+- Morning sunrise gradient on day transition
+- Full atmospheric sounds at every game moment
+
+LLM Model for all NPC agents: `claude-sonnet-4-6`
 
 ---
 
@@ -121,26 +186,32 @@ LANGSMITH_PROJECT=mafia-simulation
 
 ## Build Order (Spec-Driven Phases)
 
-**Phase 1 — Foundation (No LLM)**
-Build and fully test: `state.py` → `engine.py` → `state_views.py` → `test_engine.py`
+**Phase 1 — Foundation (No LLM)** ✅ COMPLETE
+Build and fully test: `state.py` → `engine.py` → `state_views.py` → all tests pass
 
-**Phase 2 — Graph Skeleton**
-Wire: `graph.py` with all nodes stubbed → connect edges → verify graph compiles
+**Phase 2 — Graph Skeleton** ✅ COMPLETE
+Wire: `graph.py` with all nodes stubbed → graph compiles + Mermaid verified
 
-**Phase 3 — Night Phase Agents**
-Build agents one at a time: Mafia → Detective → Medic
-Test each night phase end-to-end before proceeding.
+**Phase 3 — FastAPI Server**
+Build: `api/main.py` → game session management → `/game/start` + `/game/action` + `/game/state`
+Human-in-the-loop via LangGraph `interrupt()` pattern
 
-**Phase 4 — Day Phase**
+**Phase 4 — Night Phase Agents**
+Build NPC agents one at a time: Mafia → Detective → Medic
+Human gets CLI-style prompts via API response when it's their night turn.
+
+**Phase 5 — Day Phase**
 Build: `narrator_node.py` → `day_discussion_node.py` → `vote_node.py`
-This is the hardest phase. Use `discussion_turns_left` to bound loops.
+Human submits day statement + vote via `POST /game/{id}/action`
 
-**Phase 5 — Full Game Loop**
-Wire win_check → loop back or END
-Run 5 complete games, verify win conditions trigger correctly.
+**Phase 6 — Full Game Loop**
+Wire win_check → loop or END. Run complete games via API. Verify all win conditions.
 
-**Phase 6 — Observability**
-Add LangSmith tags, metadata, and game_round tracking to all nodes.
+**Phase 7 — Frontend**
+React + TypeScript UI consuming the FastAPI backend. Game board, role reveal, live log.
+
+**Phase 8 — Observability & Polish**
+LangSmith tags, metadata, game_round tracking across all nodes.
 
 ---
 
