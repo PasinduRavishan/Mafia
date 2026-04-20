@@ -34,10 +34,10 @@ if DATABASE_URL:
         # with SSL errors.  Connections are opened on first use instead.
         _pool = ConnectionPool(
             conninfo=DATABASE_URL,
-            min_size=0,
+            min_size=0,          # no connections pre-opened — Neon cold-start safe
             max_size=10,
-            max_idle=300,        # recycle after 5 min — before Neon kills them
-            open=False,          # lazy open
+            max_idle=300,        # recycle after 5 min before Neon kills idle connections
+            open=True,           # pool is ready; connections opened on first use (min_size=0)
             kwargs={
                 "autocommit": True,
                 "connect_timeout": 30,
