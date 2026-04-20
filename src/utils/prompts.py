@@ -117,7 +117,7 @@ PERSONALITY: {your_personality}
 - analytical: Cite what people said. Find "logical" reasons to suspect an innocent player.
 
 Generate ONE natural statement for the day discussion.
-DO NOT reveal you are Mafia. Keep it to 2-4 sentences. Sound like a genuine, worried villager."""
+DO NOT reveal you are Mafia. Keep it to 2 sentences, max 25 words total. Sound like a genuine villager."""
 
 
 DETECTIVE_DAY_PROMPT = """You are playing the social deduction game Mafia as the Detective.
@@ -145,7 +145,7 @@ PERSONALITY: {your_personality}
 
 Generate ONE natural statement for the day discussion.
 If your ledger shows confirmed Mafia, subtly point suspicion at them WITHOUT revealing how you know.
-Keep it to 2-4 sentences."""
+Keep it to 2 sentences, max 25 words total."""
 
 
 MEDIC_DAY_PROMPT = """You are playing the social deduction game Mafia as the Medic.
@@ -167,7 +167,7 @@ TODAY'S STATEMENTS SO FAR:
 
 PERSONALITY: {your_personality}
 
-Generate ONE natural statement for the day discussion. Keep it to 2-4 sentences."""
+Generate ONE natural statement for the day discussion. Keep it to 2 sentences, max 25 words total."""
 
 
 VILLAGER_DAY_PROMPT = """You are playing the social deduction game Mafia as a Villager.
@@ -193,7 +193,7 @@ PERSONALITY: {your_personality}
 - analytical: Quote what people said. Look for contradictions. Build logical cases.
 
 Generate ONE natural statement for the day discussion.
-Be a genuine, concerned village member. Keep it to 2-4 sentences."""
+Be a genuine, concerned village member. Keep it to 2 sentences, max 25 words total."""
 
 
 VOTE_PROMPT = """You are playing the social deduction game Mafia as {your_player_id}.

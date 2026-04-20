@@ -102,6 +102,8 @@ def _build_response(session: GameSession) -> GameStateResponse:
             type=interrupt_payload["type"],
             message=interrupt_payload["message"],
             options=interrupt_payload.get("options"),
+            npc_votes=interrupt_payload.get("npc_votes"),
+            npc_statements=interrupt_payload.get("npc_statements"),
         )
         session.waiting_for_human = True
         session.pending_prompt = interrupt_payload

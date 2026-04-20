@@ -13,6 +13,8 @@ from src.nodes.vote_node import vote_node
 from src.nodes.win_check_node import win_check_node
 
 
+import os
+
 def route_after_win_check(state: GameState) -> str:
     """Conditional routing after win_check_node."""
     if state.get("game_over"):
@@ -21,10 +23,20 @@ def route_after_win_check(state: GameState) -> str:
     return "continue"
 
 
-# One shared MemorySaver for all games.
-# Each game gets a unique thread_id — MemorySaver stores state per thread.
-# This is what enables pause/resume across HTTP requests.
-_checkpointer = MemorySaver()
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    from psycopg_pool import ConnectionPool
+    from langgraph.checkpoint.postgres import PostgresSaver
+    
+    # Global pool for the checkpointer
+    # In a production app, you might want to close this gracefully on shutdown
+    _pool = ConnectionPool(conninfo=DATABASE_URL)
+    _checkpointer = PostgresSaver(_pool)
+    _checkpointer.setup()  # Create checkpointer tables if they don't exist
+else:
+    # Fallback to MemorySaver for local dev
+    _checkpointer = MemorySaver()
 
 
 def build_graph():

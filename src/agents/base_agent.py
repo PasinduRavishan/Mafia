@@ -1,67 +1,102 @@
 """
-base_agent.py — LangChain + Claude LLM call infrastructure.
+base_agent.py — LLM call infrastructure.
 
-This is the ONLY place in the codebase that talks to the Claude API.
-All NPC nodes call call_agent() with a filled prompt + their filtered state view.
+LLM SWAP GUIDE (change LLM_PROVIDER below):
+  "claude"  — Anthropic Claude (requires ANTHROPIC_API_KEY)
+  "gemini"  — Google Gemini Flash FREE tier (requires GOOGLE_API_KEY from aistudio.google.com)
+  "groq"    — Groq Llama 3.3 70B FREE tier (requires GROQ_API_KEY from console.groq.com)
 
-LangChain concepts used here:
-- ChatAnthropic: the LLM model wrapper for Claude
-- SystemMessage: the agent's "persona" and instructions (stays constant)
-- HumanMessage: the current game context (changes each turn)
-- .invoke(): sends the messages to the API and returns the response
+To switch: change LLM_PROVIDER, install the corresponding package, add the API key to .env.
 """
 import json
 import re
+import time
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-# Lazy singleton — created on first call so ANTHROPIC_API_KEY is already loaded
-_llm: ChatAnthropic | None = None
+# ── LLM provider config — change this to switch models ────────────────────────
+LLM_PROVIDER = "claude"   # "claude" | "gemini" | "groq"
+
+# Lazy singleton
+_llm = None
 
 
-def _get_llm() -> ChatAnthropic:
+def _get_llm():
     global _llm
-    if _llm is None:
+    if _llm is not None:
+        return _llm
+
+    if LLM_PROVIDER == "claude":
+        from langchain_anthropic import ChatAnthropic
         _llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.8)
+
+    elif LLM_PROVIDER == "gemini":
+        # pip install langchain-google-genai
+        # Get free API key: https://aistudio.google.com/
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        _llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.8)
+
+    elif LLM_PROVIDER == "groq":
+        # pip install langchain-groq
+        # Get free API key: https://console.groq.com/
+        from langchain_groq import ChatGroq
+        _llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.8)
+
+    else:
+        raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
+
     return _llm
 
 
-def call_agent(system_prompt: str, user_context: dict) -> str:
+def call_agent(system_prompt: str, user_context: dict, max_retries: int = 3) -> str:
     """
-    Calls the Claude LLM with a system prompt + game context.
-    Returns the raw text response.
-
-    system_prompt: the agent's role instructions (from prompts.py)
-    user_context:  the filtered state view from build_agent_view()
+    Calls the configured LLM with a system prompt + game context.
+    Retries up to max_retries times on overload/rate-limit errors (with backoff).
     """
     context_text = format_context_for_prompt(user_context)
-
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=context_text),
     ]
 
-    response = _get_llm().invoke(messages)
-    return response.content
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            response = _get_llm().invoke(messages)
+            return response.content
+
+        except Exception as e:
+            last_error = e
+            err_str = str(e).lower()
+
+            # Retry on overload / rate limit / 5xx errors
+            is_retriable = any(x in err_str for x in [
+                "overloaded", "529", "rate_limit", "429",
+                "503", "502", "resource_exhausted",
+            ])
+
+            if is_retriable and attempt < max_retries - 1:
+                wait = (attempt + 1) * 6   # 6s, 12s, 18s
+                print(f"[base_agent] LLM overloaded (attempt {attempt+1}). Retrying in {wait}s...")
+                time.sleep(wait)
+                global _llm
+                _llm = None   # Reset singleton so a new connection is made
+                continue
+
+            raise
+
+    raise last_error  # type: ignore
 
 
 def format_context_for_prompt(context: dict) -> str:
-    """
-    Converts the agent view dict into a readable text block for the prompt.
-    Lists and dicts are formatted clearly so the LLM can parse them easily.
-    """
     lines = ["=== CURRENT GAME CONTEXT ==="]
     for key, value in context.items():
         if key == "is_human":
-            continue  # Internal flag — not shown to LLM
+            continue
         if isinstance(value, list):
             formatted = ", ".join(str(v) for v in value) if value else "none"
         elif isinstance(value, dict):
-            if not value:
-                formatted = "empty"
-            else:
-                formatted = "; ".join(f"{k}={v}" for k, v in value.items())
+            formatted = "empty" if not value else "; ".join(f"{k}={v}" for k, v in value.items())
         else:
             formatted = str(value) if value is not None else "none"
         lines.append(f"{key.upper()}: {formatted}")
@@ -69,18 +104,11 @@ def format_context_for_prompt(context: dict) -> str:
 
 
 def parse_json_response(response: str) -> dict:
-    """
-    Extracts and parses a JSON object from the LLM's response.
-    LLMs sometimes wrap JSON in markdown code blocks or add extra text —
-    this handles those cases robustly.
-    """
-    # Try direct parse first
     try:
         return json.loads(response.strip())
     except json.JSONDecodeError:
         pass
 
-    # Try to extract JSON from markdown code block
     match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
     if match:
         try:
@@ -88,7 +116,6 @@ def parse_json_response(response: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    # Try to find any JSON object in the response
     match = re.search(r"\{.*?\}", response, re.DOTALL)
     if match:
         try:

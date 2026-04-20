@@ -19,6 +19,8 @@ class PromptPayload(BaseModel):
     type: str                        # "night_action" | "day_statement" | "vote"
     message: str                     # Instructions shown to the human
     options: Optional[list[str]]     # Valid player_ids to choose from (None for free text)
+    npc_votes: Optional[dict] = None        # vote prompt: {player_id: voted_for} already cast
+    npc_statements: Optional[list] = None   # day_statement prompt: [{player_id, statement}] already spoken
 
 
 class GameStateResponse(BaseModel):

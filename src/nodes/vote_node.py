@@ -1,13 +1,11 @@
 """
 vote_node.py — All living players cast their vote to eliminate a suspect.
 
-NPC votes use the LLM with role-specific hints (Mafia avoids teammates,
-Detective uses their ledger, others reason from day statements).
-Human vote uses interrupt() — same pattern as other human turns.
-
-tally_votes() (pure Python) counts the results:
-- Clear majority → that player is eliminated
-- Tie → no one is eliminated, game continues to next night
+NPC votes run FIRST (via LLM), then human votes LAST.
+This means:
+  - When human sees the vote prompt, all NPC votes are already in public_log
+  - Frontend can show a sequential vote ceremony with real NPC votes
+  - Human always votes with full information (most dramatic)
 """
 import random
 
@@ -21,7 +19,6 @@ from src.utils.state_views import build_agent_view
 
 
 def _role_hint(player_id: str, state: GameState) -> str:
-    """Generates a role-specific voting hint for each NPC."""
     role = state["all_players"][player_id]["role"]
     if role == "mafia":
         teammates = [
@@ -41,27 +38,9 @@ def _role_hint(player_id: str, state: GameState) -> str:
 
 def vote_node(state: GameState) -> dict:
     votes = {}
-    vote_options = [pid for pid in state["alive_player_ids"] if pid != "human"]
+    vote_log_lines = ["\n--- Votes cast ---"]
 
-    # --- Human vote via interrupt ---
-    if "human" in state["alive_player_ids"]:
-        all_options = [pid for pid in state["alive_player_ids"] if pid != "human"]
-        human_vote = interrupt({
-            "type": "vote",
-            "message": (
-                f"=== Vote Phase — Round {state['round_number']} ===\n"
-                f"Who do you think is Mafia? Choose one player to eliminate.\n"
-                f"Alive players: {', '.join(state['alive_player_ids'])}"
-            ),
-            "options": all_options,
-        })
-        # Validate — guard against bad input
-        if human_vote in all_options:
-            votes["human"] = human_vote
-        else:
-            votes["human"] = random.choice(all_options)
-
-    # --- NPC votes via LLM ---
+    # ── Step 1: NPC votes via LLM (runs BEFORE human interrupt) ─────
     for pid in state["alive_player_ids"]:
         if pid == "human":
             continue
@@ -83,7 +62,7 @@ def vote_node(state: GameState) -> dict:
 
         try:
             response = call_agent(prompt, view)
-            result = parse_json_response(response)
+            result   = parse_json_response(response)
             vote_target = result.get("vote", "")
             if vote_target in npc_vote_options:
                 votes[pid] = vote_target
@@ -92,38 +71,66 @@ def vote_node(state: GameState) -> dict:
         except Exception:
             votes[pid] = random.choice(npc_vote_options)
 
-    # --- Tally ---
-    eliminated = tally_votes(votes)
+        # Log immediately so frontend sees it when human is interrupted
+        vote_log_lines.append(f"  {pid} votes for {votes[pid]}")
 
-    # Log each individual vote so the full record is visible
-    vote_log = ["\n--- Votes cast ---"]
-    for voter, target in votes.items():
-        label = "You" if voter == "human" else voter
-        vote_log.append(f"  {label} votes for {target}")
+    # ── Step 2: Human vote via interrupt ─────────────────────────────
+    # At this point all NPC votes are in vote_log_lines (returned via public_log)
+    if "human" in state["alive_player_ids"]:
+        all_options = [pid for pid in state["alive_player_ids"] if pid != "human"]
+
+        # Count NPC votes so far (for display in the interrupt message)
+        npc_tally: dict[str, int] = {}
+        for target in votes.values():
+            npc_tally[target] = npc_tally.get(target, 0) + 1
+        tally_str = ", ".join(f"{p}: {c} vote{'s' if c > 1 else ''}" for p, c in
+                              sorted(npc_tally.items(), key=lambda x: -x[1]))
+
+        human_vote = interrupt({
+            "type": "vote",
+            "message": (
+                f"=== Vote Phase — Round {state['round_number']} ===\n"
+                f"The village must eliminate one player.\n"
+                f"Alive players: {', '.join(state['alive_player_ids'])}\n\n"
+                f"NPC votes so far:\n{tally_str or 'None yet'}\n\n"
+                "Who do you vote to eliminate?"
+            ),
+            "options": all_options,
+            "npc_votes": votes,  # Pass NPC votes directly so frontend can show them before human votes
+        })
+
+        if human_vote in all_options:
+            votes["human"] = human_vote
+        else:
+            votes["human"] = random.choice(all_options)
+
+        vote_log_lines.append(f"  You vote for {votes['human']}")
+
+    # ── Step 3: Tally all votes ───────────────────────────────────────
+    eliminated = tally_votes(votes)
 
     updates: dict = {
         "votes": votes,
         "vote_result": eliminated,
-        "public_log": vote_log,
+        "public_log": vote_log_lines,
     }
 
     if eliminated:
         new_alive = [pid for pid in state["alive_player_ids"] if pid != eliminated]
         eliminated_role = state["all_players"][eliminated]["role"]
-        # Update all_players so is_alive reflects the elimination everywhere
         updated_players = dict(state["all_players"])
         updated_players[eliminated] = {**updated_players[eliminated], "is_alive": False}
         updates["all_players"] = updated_players
         updates["alive_player_ids"] = new_alive
         updates["dead_player_ids"] = [eliminated]
-        updates["public_log"] = [
+        updates["public_log"] = vote_log_lines + [
             f"\n[Vote Result]: The village has spoken — {eliminated} is eliminated.",
             f"[Vote Result]: {eliminated} was a {eliminated_role}.",
         ]
     else:
-        updates["public_log"] = [
-            "\n[Vote Result]: The vote was tied. No one is eliminated tonight.",
-            "[Vote Result]: The Mafia breathes a quiet sigh of relief..."
+        updates["public_log"] = vote_log_lines + [
+            "\n[Vote Result]: The vote is tied. No one is eliminated.",
+            "[Vote Result]: The Mafia breathes a quiet sigh of relief...",
         ]
 
     return updates

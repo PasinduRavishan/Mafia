@@ -86,6 +86,7 @@ def day_discussion_node(state: GameState) -> dict:
                 "What do you say to the village? (2-4 sentences)"
             ),
             "options": None,
+            "npc_statements": new_statements,  # Pass so frontend can animate them before asking human
         })
 
         human_statement = human_statement.strip()
