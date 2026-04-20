@@ -154,13 +154,13 @@
 
 **Goal:** Narrator announcement, NPC discussion, human statement, voting.
 
-- [ ] **5.1** Implement `src/nodes/narrator_node.py`
+- [x] **5.1** Implement `src/nodes/narrator_node.py`
   - Builds night result string from state
   - LLM call with Narrator Prompt (see AGENT_PROMPTS.md)
   - Appends announcement to `public_log`
   - Commit message: `"feat: narrator node"`
 
-- [ ] **5.2** Implement `src/nodes/day_discussion_node.py`
+- [x] **5.2** Implement `src/nodes/day_discussion_node.py`
   - Iterates living players in order
   - Checks `discussion_turns_left > 0` — if 0, skip to vote
   - For each NPC → LLM call with appropriate Day Prompt
@@ -169,7 +169,7 @@
   - Decrements `discussion_turns_left`
   - Commit message: `"feat: day discussion node"`
 
-- [ ] **5.3** Implement `src/nodes/vote_node.py`
+- [x] **5.3** Implement `src/nodes/vote_node.py`
   - Each living NPC → LLM call with Vote Prompt → parse JSON vote
   - Human → `interrupt(agent_view)` → resume with their vote target
   - Calls `engine.tally_votes()` → sets `vote_result`
@@ -188,20 +188,20 @@
 
 **Goal:** Complete multi-round games with win conditions.
 
-- [ ] **6.1** Implement `src/nodes/win_check_node.py`
+- [x] **6.1** Implement `src/nodes/win_check_node.py`
   - Calls `engine.check_win_condition()`
   - Sets `winner` + `game_over` in state
   - Also checks `round_number >= max_rounds` (safety cutoff, default 20)
   - Returns routing key to `route_after_win_check()`
   - Commit message: `"feat: win check node"`
 
-- [ ] **6.2** Reset state between rounds
+- [x] **6.2** Reset state between rounds
   - After win_check routes "continue" → reset: `night_actions`, `day_statements`, `votes`, `discussion_turns_left`
   - Increment `round_number`
   - This happens in setup for round 1; a `reset_round_node` or inline in win_check for subsequent rounds
   - Commit message: `"feat: round reset between loops"`
 
-- [ ] **6.3** Play 3 complete games via API
+- [x] **6.3** Play 3 complete games via API
   - Use a test script `scripts/test_game.py` that drives the API automatically
   - Verify mafia wins and village wins both occur
   - Verify max_rounds cutoff works
