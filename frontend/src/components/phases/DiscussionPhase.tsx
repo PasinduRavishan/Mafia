@@ -215,12 +215,12 @@ export default function DiscussionPhase({
         }
       }
 
-      // Pause before voting
+      // Pause before voting — give the user time to read all statements
       await sayNarrator('The village has spoken. The time for words is over...')
       if (cancelled) return
       setNarText('')
       setNarVisible(false)
-      await wait(2000)
+      await wait(5500)
 
       if (!cancelled) {
         setNarVisible(false)

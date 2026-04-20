@@ -26,12 +26,15 @@ def route_after_win_check(state: GameState) -> str:
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
-    from psycopg_pool import ConnectionPool
-    from langgraph.checkpoint.postgres import PostgresSaver
-    
-    # Use autocommit=True for Neon/Serverless Postgres
-    _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10, kwargs={"autocommit": True})
-    _checkpointer = PostgresSaver(_pool)
+    try:
+        from psycopg_pool import ConnectionPool
+        from langgraph.checkpoint.postgres import PostgresSaver
+        _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10, kwargs={"autocommit": True})
+        _checkpointer = PostgresSaver(_pool)
+    except ModuleNotFoundError:
+        print("WARNING: psycopg_pool not installed — falling back to MemorySaver despite DATABASE_URL being set.")
+        _checkpointer = MemorySaver()
+        DATABASE_URL = None  # prevent build_graph from running Postgres setup
 else:
     _checkpointer = MemorySaver()
 

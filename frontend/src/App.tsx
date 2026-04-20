@@ -17,6 +17,66 @@ export default function App() {
         </div>
       )}
 
+      {/* Global loading overlay — lives outside LandingScreen so GSAP fading doesn't hide it */}
+      {loading && screen === 'landing' && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'linear-gradient(180deg, #000008 0%, #05000f 60%, #0a0520 100%)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', gap: '2rem',
+          animation: 'fadeInUp 0.5s ease forwards',
+        }}>
+          {/* Ambient ring */}
+          <div style={{
+            position: 'relative', width: '90px', height: '90px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(232,168,56,0.18) 0%, transparent 70%)',
+              animation: 'pulse-glow 2s ease-in-out infinite',
+            }} />
+            <div style={{
+              width: '44px', height: '44px',
+              border: '2px solid rgba(232,168,56,0.25)',
+              borderTopColor: '#e8a838',
+              borderRadius: '50%',
+              animation: 'spin 1.1s linear infinite',
+            }} />
+          </div>
+
+          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            <p style={{
+              fontFamily: '"Cinzel Decorative", serif', fontSize: '1rem',
+              color: 'rgba(232,168,56,0.85)', letterSpacing: '0.14em',
+              textTransform: 'uppercase', margin: 0,
+              animation: 'pulse-glow 2.5s ease-in-out infinite',
+            }}>
+              Loading the Game
+            </p>
+            <p style={{
+              fontFamily: 'Lora, serif', fontSize: '0.9rem',
+              color: 'rgba(255,255,255,0.38)', fontStyle: 'italic',
+              margin: 0,
+            }}>
+              The village gathers in the shadows...
+            </p>
+          </div>
+
+          {/* Decorative lantern dots */}
+          <div style={{ display: 'flex', gap: '10px', marginTop: '0.5rem' }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{
+                width: '5px', height: '5px', borderRadius: '50%',
+                background: 'rgba(232,168,56,0.6)',
+                animation: `pulse-glow 1.4s ease-in-out infinite`,
+                animationDelay: `${i * 0.35}s`,
+              }} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {screen === 'landing' && (
         <LandingScreen onStart={startGame} loading={loading} />
       )}

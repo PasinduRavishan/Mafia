@@ -45,6 +45,28 @@ export default function GameScreen({ gameState, onSubmit, onGameOver, loading }:
   const [narratorText, setNarratorText]       = useState('')
   const [narratorVisible, setNarratorVisible] = useState(false)
 
+  // Detective reveal — lives here (not NightPhase) so it persists after NightPhase unmounts
+  const [detectiveReveal, setDetectiveReveal] = useState<string | null>(null)
+  const prevLedgerRef  = useRef<Record<string, string>>(gameState.investigation_ledger ?? {})
+
+  useEffect(() => {
+    const ledger = gameState.investigation_ledger
+    if (!ledger || gameState.your_role !== 'detective') return
+    for (const [pid, alignment] of Object.entries(ledger)) {
+      if (!prevLedgerRef.current[pid]) {
+        prevLedgerRef.current = { ...ledger }
+        const isMafia = alignment === 'mafia'
+        setDetectiveReveal(
+          isMafia
+            ? `Your secret oracle: ${pid} is MAFIA 🐺`
+            : `Your secret oracle: ${pid} is innocent ✓`
+        )
+        setTimeout(() => setDetectiveReveal(null), 9000)
+        break
+      }
+    }
+  }, [gameState.investigation_ledger, gameState.your_role])
+
   const logRef         = useRef<HTMLDivElement>(null)
   const cardRefs       = useRef<Record<string, HTMLDivElement | null>>({})
   const bubbleTimers   = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
@@ -240,20 +262,7 @@ export default function GameScreen({ gameState, onSubmit, onGameOver, loading }:
       />
 
       {/* ── HUD — top bar ──────────────────────────────────────────── */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 pt-4 pointer-events-none">
-        <div className="glass-panel rounded-xl px-3 py-2 text-xs font-mono text-white/50">
-          Round {displayRound}
-          <span className="mx-2 text-white/20">·</span>
-          <span className={
-            displayPhase === 'night' ? 'text-white/60'
-            : displayPhase === 'vote' || displayPhase === 'vote-result' ? 'text-red-400/80'
-            : 'text-accent/80'
-          }>
-            {displayPhase === 'night' ? 'NIGHT'
-             : displayPhase === 'vote' || displayPhase === 'vote-result' ? 'VOTE'
-             : 'DAY'}
-          </span>
-        </div>
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-end px-4 pt-4 pointer-events-none">
         <div className="flex items-center gap-3">
           <div className="glass-panel rounded-xl px-3 py-2 text-xs">
             <span className="text-medic">●</span>
@@ -314,14 +323,13 @@ export default function GameScreen({ gameState, onSubmit, onGameOver, loading }:
             background: 'radial-gradient(ellipse at 50% 110%, rgba(139,69,19,0.35) 0%, rgba(60,20,0,0.14) 45%, transparent 70%)',
           }} />
 
-          {/* Waiting for narrator text */}
+          {/* Waiting for narrator text — bottom right */}
           {!narratorLine && (
             <div style={{
-              position: 'absolute', bottom: '3rem', left: '50%',
-              transform: 'translateX(-50%)', pointerEvents: 'none',
+              position: 'fixed', bottom: '1.8rem', right: '1.5rem', pointerEvents: 'none',
             }}>
               <div style={{
-                background: 'rgba(6,6,18,0.8)', backdropFilter: 'blur(10px)',
+                background: 'rgba(6,6,18,0.85)', backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '12px', padding: '7px 18px',
                 display: 'flex', alignItems: 'center', gap: '10px',
@@ -341,25 +349,24 @@ export default function GameScreen({ gameState, onSubmit, onGameOver, loading }:
             </div>
           )}
 
-          {/* Narrator text box */}
+          {/* Narrator text box — bottom right */}
           {narratorVisible && narratorText && (
             <div style={{
-              position: 'absolute', bottom: '3rem', left: '50%',
-              transform: 'translateX(-50%)',
-              width: 'min(88vw, 480px)', pointerEvents: 'none',
+              position: 'fixed', bottom: '1.8rem', right: '1.5rem',
+              width: 'min(36vw, 400px)', pointerEvents: 'none',
             }}>
               <div ref={narratorBoxRef} style={{
                 background: 'rgba(6,6,16,0.94)', backdropFilter: 'blur(14px)',
                 border: '1px solid rgba(232,168,56,0.35)',
-                borderRadius: '18px', padding: '15px 22px',
-                display: 'flex', gap: '13px', alignItems: 'center',
+                borderRadius: '18px', padding: '14px 20px',
+                display: 'flex', gap: '12px', alignItems: 'center',
                 boxShadow: '0 0 30px rgba(232,168,56,0.06)',
               }}>
                 <span style={{ fontSize: '1rem', flexShrink: 0, opacity: 0.7 }}>🌅</span>
                 <p style={{
-                  fontFamily: 'Lora, serif', fontSize: '0.96rem',
+                  fontFamily: 'Lora, serif', fontSize: '0.92rem',
                   color: 'rgba(255,255,255,0.88)', fontStyle: 'italic',
-                  lineHeight: '1.65', margin: 0,
+                  lineHeight: '1.6', margin: 0,
                 }}>
                   {narratorText}
                 </p>
@@ -442,6 +449,38 @@ export default function GameScreen({ gameState, onSubmit, onGameOver, loading }:
               textTransform: 'uppercase',
             }}>
               Tallying all votes...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Detective secret oracle reveal (persists across phase changes) ── */}
+      {detectiveReveal && (
+        <div style={{
+          position: 'fixed', top: '5rem', right: '1.5rem',
+          zIndex: 500, pointerEvents: 'none',
+          animation: 'fadeInUp 0.5s ease forwards',
+        }}>
+          <div style={{
+            background: 'rgba(4,8,30,0.98)', backdropFilter: 'blur(20px)',
+            border: '2px solid rgba(41,128,185,0.6)',
+            borderRadius: '16px', padding: '14px 22px',
+            maxWidth: '320px',
+            boxShadow: '0 0 50px rgba(41,128,185,0.2), 0 16px 40px rgba(0,0,0,0.85)',
+          }}>
+            <p style={{
+              fontFamily: '"Cinzel Decorative", serif', fontSize: '0.55rem',
+              color: 'rgba(41,128,185,0.7)', textTransform: 'uppercase',
+              letterSpacing: '0.18em', margin: '0 0 7px',
+            }}>
+              🔍 Secret Oracle
+            </p>
+            <p style={{
+              fontFamily: 'Lora, serif', fontSize: '0.92rem',
+              color: 'rgba(255,255,255,0.92)', fontStyle: 'italic',
+              lineHeight: '1.55', margin: 0,
+            }}>
+              {detectiveReveal}
             </p>
           </div>
         </div>
