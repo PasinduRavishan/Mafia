@@ -12,11 +12,10 @@ from src.nodes.day_discussion_node import day_discussion_node
 from src.nodes.vote_node import vote_node
 from src.nodes.win_check_node import win_check_node
 
-
 import os
 
+
 def route_after_win_check(state: GameState) -> str:
-    """Conditional routing after win_check_node."""
     if state.get("game_over"):
         winner = state.get("winner")
         return "village_wins" if winner == "village" else "mafia_wins"
@@ -25,81 +24,27 @@ def route_after_win_check(state: GameState) -> str:
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# Exact DDL LangGraph's PostgresSaver expects — used as a guaranteed fallback
-_CHECKPOINT_DDL = """
-CREATE TABLE IF NOT EXISTS checkpoint_migrations (
-    v INTEGER PRIMARY KEY
-);
-CREATE TABLE IF NOT EXISTS checkpoints (
-    thread_id          TEXT    NOT NULL,
-    checkpoint_ns      TEXT    NOT NULL DEFAULT '',
-    checkpoint_id      TEXT    NOT NULL,
-    parent_checkpoint_id TEXT,
-    type               TEXT,
-    checkpoint         BYTEA   NOT NULL,
-    metadata           BYTEA   NOT NULL,
-    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
-);
-CREATE TABLE IF NOT EXISTS checkpoint_blobs (
-    thread_id     TEXT  NOT NULL,
-    checkpoint_ns TEXT  NOT NULL DEFAULT '',
-    channel       TEXT  NOT NULL,
-    version       TEXT  NOT NULL,
-    type          TEXT  NOT NULL,
-    blob          BYTEA,
-    PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
-);
-CREATE TABLE IF NOT EXISTS checkpoint_writes (
-    thread_id     TEXT    NOT NULL,
-    checkpoint_ns TEXT    NOT NULL DEFAULT '',
-    checkpoint_id TEXT    NOT NULL,
-    task_id       TEXT    NOT NULL,
-    idx           INTEGER NOT NULL,
-    channel       TEXT    NOT NULL,
-    type          TEXT,
-    value         BYTEA,
-    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
-);
-"""
-
-def _ensure_tables(url: str) -> None:
-    """Create checkpoint tables directly via psycopg — bypasses any setup() quirks."""
-    import psycopg
-    with psycopg.connect(url, autocommit=True) as conn:
-        for stmt in _CHECKPOINT_DDL.strip().split(";\n"):
-            stmt = stmt.strip()
-            if stmt:
-                conn.execute(stmt + ";")
-    print("Checkpoint tables verified via direct DDL.")
-
-
 if DATABASE_URL:
     try:
-        import psycopg
         from psycopg_pool import ConnectionPool
         from langgraph.checkpoint.postgres import PostgresSaver
 
-        print("--- POSTGRES CHECKPOINTER SETUP ---")
-
-        # First: try the official setup() API
-        try:
-            with PostgresSaver.from_conn_string(DATABASE_URL) as _tmp:
-                _tmp.setup()
-            print("setup() via from_conn_string succeeded.")
-        except Exception as setup_err:
-            print(f"setup() failed ({setup_err}), falling back to direct DDL.")
-            _ensure_tables(DATABASE_URL)
-
-        # Create the runtime pool
+        # min_size=0: do NOT pre-open connections on startup.
+        # Neon serverless pauses idle compute and kills pre-opened connections
+        # with SSL errors.  Connections are opened on first use instead.
         _pool = ConnectionPool(
             conninfo=DATABASE_URL,
+            min_size=0,
             max_size=10,
-            open=True,
-            kwargs={"autocommit": True},
+            max_idle=300,        # recycle after 5 min — before Neon kills them
+            open=False,          # lazy open
+            kwargs={
+                "autocommit": True,
+                "connect_timeout": 30,
+            },
         )
         _checkpointer = PostgresSaver(_pool)
-        print("Postgres checkpointer ready.")
-        print("-----------------------------------")
+        print("Postgres checkpointer configured (lazy pool).")
 
     except (ModuleNotFoundError, ImportError) as e:
         print(f"WARNING: Postgres packages not available ({e}) — using MemorySaver.")
@@ -116,7 +61,6 @@ else:
 
 
 def build_graph():
-
     builder = StateGraph(GameState)
 
     builder.add_node("setup", setup_node)
