@@ -43,9 +43,12 @@ def build_graph():
     # Ensure tables exist if using Postgres
     if DATABASE_URL and isinstance(_checkpointer, PostgresSaver):
         try:
-            _checkpointer.setup()
+            # We must use a connection from the pool to run setup
+            with _pool.connection() as conn:
+                _checkpointer.setup(conn)
         except Exception as e:
-            print(f"Warning: Database setup failed: {e}. If tables already exist, this is fine.")
+            # If tables already exist, this might throw an error we can ignore
+            print(f"Database setup notice: {e}")
 
     builder = StateGraph(GameState)
 
