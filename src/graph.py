@@ -29,22 +29,24 @@ if DATABASE_URL:
     from psycopg_pool import ConnectionPool
     from langgraph.checkpoint.postgres import PostgresSaver
     
-    # Global pool for the checkpointer
-    # In a production app, you might want to close this gracefully on shutdown
-    _pool = ConnectionPool(conninfo=DATABASE_URL)
+    # Global pool
+    _pool = ConnectionPool(conninfo=DATABASE_URL, max_size=10)
     _checkpointer = PostgresSaver(_pool)
-    _checkpointer.setup()  # Create checkpointer tables if they don't exist
 else:
-    # Fallback to MemorySaver for local dev
     _checkpointer = MemorySaver()
 
 
 def build_graph():
     """
     Builds and compiles the LangGraph StateGraph.
-    The MemorySaver checkpointer is attached at compile time.
-    Returns the same compiled graph instance every call (singleton via module-level checkpointer).
     """
+    # Ensure tables exist if using Postgres
+    if DATABASE_URL and isinstance(_checkpointer, PostgresSaver):
+        try:
+            _checkpointer.setup()
+        except Exception as e:
+            print(f"Warning: Database setup failed: {e}. If tables already exist, this is fine.")
+
     builder = StateGraph(GameState)
 
     builder.add_node("setup", setup_node)
